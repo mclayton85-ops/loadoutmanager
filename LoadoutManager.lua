@@ -27,19 +27,6 @@ function LoadoutManager:CreateTimer(delay, callback)
     end)
 end
 
--- TBC-compatible timer function to replace C_Timer.After
-function LoadoutManager:CreateTimer(delay, callback)
-    local frame = CreateFrame("Frame")
-    local elapsed = 0
-    frame:SetScript("OnUpdate", function(self, dt)
-        elapsed = elapsed + dt
-        if elapsed >= delay then
-            frame:SetScript("OnUpdate", nil)
-            callback()
-        end
-    end)
-end
-
 --ui table definitions
 LoadoutManagerUI = {}
 LoadoutManagerUI.frame = nil
@@ -1000,17 +987,18 @@ end
 function LoadoutManager:OnEvent(event, ...)
     local arg1 = select(1, ...)
     if event == "ADDON_LOADED" and arg1 == "LoadoutManager" then
+        -- Initialize database IMMEDIATELY when addon loads
+        self:InitializeDatabase()
         self:RegisterSlashCommands()
-        self:Print("LoadoutManager loaded. Waiting for login...")
+        self:Print("LoadoutManager loaded and database initialized!")
         -- Initialize minimap button
         LoadoutManagerUI:CreateMinimapButton()
 	
     elseif event == "PLAYER_LOGIN" then
-        -- Initialize database AFTER saved variables are loaded
-        self:InitializeDatabase()
+        -- Just confirm we're ready after login
         self:Print("LoadoutManager ready! Type /loadout help for commands.")
         
-	elseif event == "BAG_UPDATE" and self.isProcessing then
+    elseif event == "BAG_UPDATE" and self.isProcessing then
         -- This event means a bag or bank update has happened, so we can process the next move.
         self:ProcessNextMoveInQueue()
     elseif event == "BANKFRAME_OPENED" then
@@ -1026,9 +1014,16 @@ function LoadoutManager:OnEvent(event, ...)
 end
 
 -- Save current bag state as a loadout
+-- Save current bag state as a loadout
 function LoadoutManager:SaveCurrentLoadout(name)
     if not name or name == "" then
         self:Print("Please provide a name for the loadout.")
+        return
+    end
+    
+    -- Ensure database is properly initialized
+    if not LoadoutManagerDB then
+        self:Print("ERROR: SavedVariables not initialized!")
         return
     end
     
@@ -1063,17 +1058,14 @@ function LoadoutManager:SaveCurrentLoadout(name)
         end
     end
     
-    self:Print("DEBUG: About to save to LoadoutManagerDB")
-    self:Print("DEBUG: self.db exists: " .. tostring(self.db ~= nil))
-    self:Print("DEBUG: LoadoutManagerDB exists: " .. tostring(LoadoutManagerDB ~= nil))
+    -- Save ONLY to LoadoutManagerDB (self.db points to it)
+    LoadoutManagerDB.loadouts[name] = loadout
     
-    self.db.loadouts[name] = loadout
-    LoadoutManagerDB.loadouts[name] = loadout  -- Force direct assignment too
-    
-    self:Print("DEBUG: Saved to both self.db and LoadoutManagerDB")
+    self:Print("DEBUG: Saved to LoadoutManagerDB")
     self:Print("DEBUG: LoadoutManagerDB now has " .. self:CountLoadouts() .. " loadouts")
     self:Print("Loadout '" .. name .. "' saved with " .. self:CountLoadoutItems(loadout) .. " items.")
 end
+
 -- Load and apply a loadout
 function LoadoutManager:LoadLoadout(name)
     if not name or name == "" then
@@ -1617,6 +1609,8 @@ end
 --added initialization with debug prints
 function LoadoutManager:InitializeDatabase()
     self:Print("DEBUG: Initializing database...")
+    
+    -- Ensure LoadoutManagerDB exists
     if not LoadoutManagerDB then
         self:Print("DEBUG: Creating new LoadoutManagerDB")
         LoadoutManagerDB = {
@@ -1627,10 +1621,24 @@ function LoadoutManager:InitializeDatabase()
             }
         }
     else
-        self:Print("DEBUG: Found existing LoadoutManagerDB with " .. self:CountLoadouts() .. " loadouts")
+        self:Print("DEBUG: Found existing LoadoutManagerDB")
+        -- Ensure structure exists
+        if not LoadoutManagerDB.loadouts then
+            LoadoutManagerDB.loadouts = {}
+        end
+        if not LoadoutManagerDB.settings then
+            LoadoutManagerDB.settings = {
+                autoSort = true,
+                verbose = false,
+            }
+        end
     end
+    
+    -- Point self.db directly to the saved variable
     self.db = LoadoutManagerDB
+    
     self:Print("DEBUG: Database initialization complete")
+    self:Print("DEBUG: Loadouts found: " .. self:CountLoadouts())
 end
 
 -- Helper function to count loadouts
