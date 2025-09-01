@@ -1,0 +1,7 @@
+## Interface: 20504
+## Title: LoadoutManager
+## SavedVariable: LoadoutManagerDB
+LoadoutManagerv2.lua
+--LoadoutManager+ui.lua
+--test.lua
+--LoadoutManager.lua
