@@ -798,8 +798,17 @@ end
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    
+    -- Enable ESC key to close the frame (TBC-compatible)
+    frame:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+        end
+    end)
+    frame:EnableKeyboard(true)
 
     -- Add title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     title:SetText("Loadout Manager")
     title:SetPoint("TOP", frame, "TOP", 0, -15)
