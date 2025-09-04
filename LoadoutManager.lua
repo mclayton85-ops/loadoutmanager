@@ -122,8 +122,7 @@ function LoadoutManager:ListLoadouts()
     self:Print("----------------------")
 end
 
--- Create simple UI frame
-function LoadoutManagerUI:CreateFrame()
+
 
 -- Create tab buttons in the button container
 function LoadoutManagerUI:CreateTabButtons(mainFrame)
@@ -168,10 +167,6 @@ function LoadoutManagerUI:CreateTabButtons(mainFrame)
     mainFrame.deleteButton = deleteButton
 end
 
-    if self.frame then
-        self.frame:Show()
-        return
-    end
 
 -- Set active button and show corresponding content
 function LoadoutManagerUI:SetActiveButton(mainFrame, button)
@@ -220,14 +215,24 @@ function LoadoutManagerUI:ShowCreateContent(mainFrame)
         label:SetText("Enter loadout name:")
         label:SetPoint("CENTER", createFrame, "CENTER", 0, 30)
         
-        -- Input box
-        local editBox = CreateFrame("EditBox", nil, createFrame, "InputBoxTemplate")
-        editBox:SetWidth(200)
-        editBox:SetHeight(20)
-        editBox:SetPoint("CENTER", createFrame, "CENTER", 0, 0)
-        editBox:SetAutoFocus(false)
-        editBox:SetText("")
-        
+	 -- Input box
+		local editBox = CreateFrame("EditBox", nil, createFrame, "InputBoxTemplate")
+		editBox:SetWidth(200)
+		editBox:SetHeight(20)
+		editBox:SetPoint("CENTER", createFrame, "CENTER", 0, 0)
+		editBox:SetAutoFocus(false)
+		editBox:SetText("")
+
+-- Handle focus events to manage keyboard input
+editBox:SetScript("OnEditFocusGained", function(self)
+    -- When editbox gains focus, track state but keep frame keyboard enabled
+    mainFrame.toggleKeyboard(true)
+end)
+
+editBox:SetScript("OnEditFocusLost", function(self)
+    -- When editbox loses focus, track state but keep frame keyboard enabled for ESC
+    mainFrame.toggleKeyboard(false)
+end)      
         -- Save Button
         local saveButton = CreateFrame("Button", nil, createFrame, "UIPanelButtonTemplate")
         saveButton:SetWidth(80)
@@ -305,98 +310,137 @@ function LoadoutManagerUI:ShowListContent(mainFrame)
             mainFrame.contentFrames.list.noLoadoutsText:Hide()
         end
         
-        -- Create loadout selection dropdown if it doesn't exist
-        if not mainFrame.contentFrames.list.dropdownText then
-            -- Label
-            local label = mainFrame.contentFrames.list:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            label:SetText("Select loadout to view:")
-            label:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", 0, 140)
-            
-            -- Dropdown text
-            local dropdownText = mainFrame.contentFrames.list:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            dropdownText:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", 0, 110)
-            
-            -- Previous button
-            local prevButton = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
-            prevButton:SetWidth(30)
-            prevButton:SetHeight(20)
-            prevButton:SetPoint("RIGHT", dropdownText, "LEFT", -10, 0)
-            prevButton:SetText("<")
-            
-            -- Next button
-            local nextButton = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
-            nextButton:SetWidth(30)
-            nextButton:SetHeight(20)
-            nextButton:SetPoint("LEFT", dropdownText, "RIGHT", 10, 0)
-            nextButton:SetText(">")
-            
+-- Create loadout selection list if it doesn't exist
+if not mainFrame.contentFrames.list.loadoutListFrame then
+    -- Create scrollable list frame
+    local loadoutListFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
+    loadoutListFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list, "TOPLEFT", 10, -50)
+    loadoutListFrame:SetWidth(250)  -- Narrower to leave room for item view
+    loadoutListFrame:SetHeight(240)  -- Doubled from 120 to 240
+    loadoutListFrame:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    loadoutListFrame:SetBackdropColor(0, 0, 0, 0.8)
+    
+   -- Create scroll child
+    local scrollChild = CreateFrame("Frame", nil, loadoutListFrame)
+    loadoutListFrame:SetScrollChild(scrollChild)
+    scrollChild:SetWidth(230)  -- Adjusted for narrower list
+        
+    -- Store references
+    mainFrame.contentFrames.list.loadoutListFrame = loadoutListFrame
+    mainFrame.contentFrames.list.scrollChild = scrollChild
+    mainFrame.contentFrames.list.loadoutButtons = {}
+    mainFrame.contentFrames.list.selectedLoadout = nil
+end
+
+-- Clear existing buttons
+if mainFrame.contentFrames.list.loadoutButtons then
+    for _, button in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
+        button:Hide()
+    end
+    mainFrame.contentFrames.list.loadoutButtons = {}
+end
+
+-- Create buttons for each loadout
+local yOffset = 0
+for i, loadoutName in ipairs(loadoutNames) do
+    local button = CreateFrame("Button", nil, mainFrame.contentFrames.list.scrollChild)
+    button:SetWidth(230)  -- Adjusted to match narrower container
+    button:SetHeight(35)
+    button:SetPoint("TOPLEFT", mainFrame.contentFrames.list.scrollChild, "TOPLEFT", 5, -10 - yOffset)
+    
+    -- Button text
+    local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    text:SetPoint("LEFT", button, "LEFT", 13, 4)
+    text:SetJustifyH("LEFT")
+    text:SetText(loadoutName)
+    button.text = text
+    
+    -- Button background
+    button:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+    button:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
+    button:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
+    
+    -- Click handler
+    button:SetScript("OnClick", function(self)
+        -- Deselect all other buttons
+        for _, otherButton in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
+            otherButton.text:SetTextColor(1, 1, 1) -- White
+        end
+        
+        -- Select this button
+        self.text:SetTextColor(1, 1, 0) -- Yellow
+        mainFrame.contentFrames.list.selectedLoadout = loadoutName
+        LoadoutManagerUI:HideItemView(mainFrame)
+    end)
+    
+    table.insert(mainFrame.contentFrames.list.loadoutButtons, button)
+    yOffset = yOffset + 40
+end
+
+-- Set scroll child height
+mainFrame.contentFrames.list.scrollChild:SetHeight(math.max(yOffset, 100))
+
+-- Select first loadout by default
+if #loadoutNames > 0 and mainFrame.contentFrames.list.loadoutButtons[1] then
+    mainFrame.contentFrames.list.loadoutButtons[1].text:SetTextColor(1, 1, 0) -- Yellow
+    mainFrame.contentFrames.list.selectedLoadout = loadoutNames[1]
+end
+
+-- Create action buttons if they don't exist
+        if not mainFrame.contentFrames.list.loadButton then
             -- Load Button
             local loadButton = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
             loadButton:SetWidth(100)
             loadButton:SetHeight(25)
-            loadButton:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", -60, 70)
+            loadButton:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", -60, -120)
             loadButton:SetText("Load Loadout")
             
             -- View Items Button
             local viewButton = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
             viewButton:SetWidth(120)
             viewButton:SetHeight(25)
-            viewButton:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", 70, 70)
+            viewButton:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", 70, -120)
             viewButton:SetText("View Items")
-            
             -- Store references
-            mainFrame.contentFrames.list.dropdownText = dropdownText
-            mainFrame.contentFrames.list.prevButton = prevButton
-            mainFrame.contentFrames.list.nextButton = nextButton
             mainFrame.contentFrames.list.loadButton = loadButton
             mainFrame.contentFrames.list.viewButton = viewButton
         end
         
-        -- Update dropdown with current loadouts
-        local currentIndex = 1
-        local selectedLoadout = loadoutNames[currentIndex]
-        mainFrame.contentFrames.list.dropdownText:SetText(selectedLoadout)
-        
-        -- Navigation button handlers
-        mainFrame.contentFrames.list.prevButton:SetScript("OnClick", function()
-            currentIndex = currentIndex - 1
-            if currentIndex < 1 then currentIndex = #loadoutNames end
-            selectedLoadout = loadoutNames[currentIndex]
-            mainFrame.contentFrames.list.dropdownText:SetText(selectedLoadout)
-            LoadoutManagerUI:HideItemView(mainFrame) -- Hide item view when switching loadouts
-        end)
-        
-        mainFrame.contentFrames.list.nextButton:SetScript("OnClick", function()
-            currentIndex = currentIndex + 1
-            if currentIndex > #loadoutNames then currentIndex = 1 end
-            selectedLoadout = loadoutNames[currentIndex]
-            mainFrame.contentFrames.list.dropdownText:SetText(selectedLoadout)
-            LoadoutManagerUI:HideItemView(mainFrame) -- Hide item view when switching loadouts
-        end)
-        
         -- Action button handlers
         mainFrame.contentFrames.list.loadButton:SetScript("OnClick", function()
+            local selectedLoadout = mainFrame.contentFrames.list.selectedLoadout
             if selectedLoadout then
                 LoadoutManager:LoadLoadout(selectedLoadout)
+            else
+                LoadoutManager:Print("Please select a loadout first.")
             end
         end)
         
         mainFrame.contentFrames.list.viewButton:SetScript("OnClick", function()
+            local selectedLoadout = mainFrame.contentFrames.list.selectedLoadout
             if selectedLoadout then
                 LoadoutManagerUI:ShowItemView(mainFrame, selectedLoadout)
+            else
+                LoadoutManager:Print("Please select a loadout first.")
             end
         end)
     end
-    
     mainFrame.contentFrames.list:Show()
 end
-
 -- Hide the item view display
 function LoadoutManagerUI:HideItemView(mainFrame)
     if mainFrame.contentFrames.list.itemViewFrame then
         mainFrame.contentFrames.list.itemViewFrame:Hide()
     end
 end
+
 
 -- Show items in the selected loadout
 function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
@@ -405,20 +449,40 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
         LoadoutManager:Print("Error: Loadout not found.")
         return
     end
+  
+-- Create or reuse the item view frame
+    local itemFrame = mainFrame.contentFrames.list.itemViewFrame
+    if not itemFrame then
+        itemFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
+        itemFrame:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        itemFrame:SetBackdropColor(0, 0, 0, 0.8)
+    end
     
-    -- Create item view frame if it doesn't exist
-    if not mainFrame.contentFrames.list.itemViewFrame then
-        local itemFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
-        itemFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list, "TOPLEFT", 10, -180)
-        itemFrame:SetPoint("BOTTOMRIGHT", mainFrame.contentFrames.list, "BOTTOMRIGHT", -30, 40)
-        
-        -- Create scroll child
-        local scrollChild = CreateFrame("Frame", nil, itemFrame)
+    -- Create or reuse the scroll child
+    local scrollChild = mainFrame.contentFrames.list.scrollChild
+    if not scrollChild then
+        scrollChild = CreateFrame("Frame", nil, itemFrame)
         itemFrame:SetScrollChild(scrollChild)
-        scrollChild:SetWidth(1)
+    end
+    
+    -- Position item view on the RIGHT side, to the right of the loadout list
+    itemFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list.loadoutListFrame, "TOPRIGHT", 10, 0)
+    itemFrame:SetPoint("BOTTOMRIGHT", mainFrame.contentFrames.list, "BOTTOMRIGHT", -10, 40)
+    itemFrame:SetWidth(200) -- Set a fixed width for the right panel
+    
+    scrollChild:SetWidth(180) -- Narrower to fit in right panel
         
-        -- Create scrollbar
-        local scrollBar = CreateFrame("Slider", nil, itemFrame, "UIPanelScrollBarTemplate")
+    -- Create scrollbar if it doesn't exist
+    local scrollBar = mainFrame.contentFrames.list.scrollBar
+    if not scrollBar then
+        scrollBar = CreateFrame("Slider", nil, itemFrame, "UIPanelScrollBarTemplate")
         scrollBar:SetPoint("TOPLEFT", itemFrame, "TOPRIGHT", 4, -16)
         scrollBar:SetPoint("BOTTOMLEFT", itemFrame, "BOTTOMRIGHT", 4, 16)
         scrollBar:SetMinMaxValues(0, 100)
@@ -440,6 +504,7 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
         scrollBar:SetScript("OnValueChanged", function(self, value)
             itemFrame:SetVerticalScroll(value)
         end)
+    end
 		
         -- Store references
         mainFrame.contentFrames.list.itemViewFrame = itemFrame
@@ -451,34 +516,34 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
         local topPrevPage = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
         topPrevPage:SetWidth(80)
         topPrevPage:SetHeight(20)
-        topPrevPage:SetPoint("TOPLEFT", itemFrame, "TOPLEFT", 0, 25)
-        topPrevPage:SetText("< Prev Page")
+        topPrevPage:SetPoint("TOPRIGHT", itemFrame, "TOPRIGHT", -10, 25)
+        topPrevPage:SetText("< Prev")
         
         local topNextPage = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
         topNextPage:SetWidth(80)
         topNextPage:SetHeight(20)
-        topNextPage:SetPoint("TOPRIGHT", itemFrame, "TOPRIGHT", 0, 25)
-        topNextPage:SetText("Next Page >")
+        topNextPage:SetPoint("TOPRIGHT", itemFrame, "TOPRIGHT", -100, 25)
+        topNextPage:SetText("Next >")
         
         -- Create bottom pagination buttons
         local bottomPrevPage = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
         bottomPrevPage:SetWidth(80)
         bottomPrevPage:SetHeight(20)
-        bottomPrevPage:SetPoint("BOTTOMLEFT", itemFrame, "BOTTOMLEFT", 0, -25)
-        bottomPrevPage:SetText("< Prev Page")
+        bottomPrevPage:SetPoint("BOTTOMRIGHT", itemFrame, "BOTTOMRIGHT", -10, -25)
+        bottomPrevPage:SetText("< Prev")
         
         local bottomNextPage = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
         bottomNextPage:SetWidth(80)
         bottomNextPage:SetHeight(20)
-        bottomNextPage:SetPoint("BOTTOMRIGHT", itemFrame, "BOTTOMRIGHT", 0, -25)
-        bottomNextPage:SetText("Next Page >")
-        
+        bottomNextPage:SetPoint("BOTTOMRIGHT", itemFrame, "BOTTOMRIGHT", -100, -25)
+        bottomNextPage:SetText("Next >")
+		
         -- Store pagination buttons
         mainFrame.contentFrames.list.topPrevPage = topPrevPage
         mainFrame.contentFrames.list.topNextPage = topNextPage
         mainFrame.contentFrames.list.bottomPrevPage = bottomPrevPage
         mainFrame.contentFrames.list.bottomNextPage = bottomNextPage
-    end
+		
     
     -- Get consolidated item list
     local itemList = LoadoutManagerUI:GetConsolidatedItemList(loadout)
@@ -487,6 +552,7 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
     LoadoutManagerUI:UpdateItemView(mainFrame, itemList)
     
     mainFrame.contentFrames.list.itemViewFrame:Show()
+	
 end
 
 -- Get consolidated list of items (combine stacks of same item)
@@ -774,10 +840,17 @@ function LoadoutManagerUI:ShowDeleteContent(mainFrame)
                 LoadoutManagerUI:ShowDeleteContent(mainFrame)
             end
         end)
-    end
+end
     
     mainFrame.contentFrames.delete:Show()
 end
+
+-- Create simple UI frame
+function LoadoutManagerUI:CreateFrame()
+    if self.frame then
+        self.frame:Show()
+        return
+    end
 
     -- Create the main frame (doubled size)
     local frame = CreateFrame("Frame", "LoadoutManagerUIFrame", UIParent)
@@ -799,13 +872,57 @@ end
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     
-    -- Enable ESC key to close the frame (TBC-compatible)
-    frame:SetScript("OnKeyDown", function(self, key)
+-- Keep keyboard disabled by default for key passthrough
+frame:EnableKeyboard(false)
+frame:SetFrameStrata("DIALOG")
+frame.keyboardEnabled = false
+
+-- Create invisible ESC capture button
+local escButton = CreateFrame("Button", "LoadoutManagerESCButton", frame)
+escButton:SetWidth(1)
+escButton:SetHeight(1)
+escButton:SetPoint("TOPLEFT", frame, "TOPLEFT", -100, -100) -- Position off-screen
+escButton:Hide()
+escButton:RegisterForClicks("AnyUp")
+
+-- Function to manage keyboard state
+frame.toggleKeyboard = function(enable)
+    if enable and not frame.keyboardEnabled then
+        frame:EnableKeyboard(true)
+        frame.keyboardEnabled = true
+        escButton:Hide() -- Hide ESC button when editbox has focus
+    elseif not enable and frame.keyboardEnabled then
+        frame:EnableKeyboard(false)
+        frame.keyboardEnabled = false
+        escButton:Show() -- Show ESC button when editbox loses focus
+    end
+end
+
+-- Handle ESC key when keyboard is enabled (editbox focused)
+frame:SetScript("OnKeyDown", function(self, key)
+    if key == "ESCAPE" then
+        self:Hide()
+    end
+end)
+
+-- Set up ESC key handling for when frame is shown but editbox not focused
+frame:SetScript("OnShow", function(self)
+    escButton:Show()
+    escButton:EnableKeyboard(true)
+    escButton:SetScript("OnKeyDown", function(btn, key)
         if key == "ESCAPE" then
-            self:Hide()
+            frame:Hide()
         end
     end)
-    frame:EnableKeyboard(true)
+end)
+
+frame:SetScript("OnHide", function(self)
+    escButton:Hide()
+    escButton:EnableKeyboard(false)
+    -- Make sure main frame keyboard is disabled when hiding
+    self:EnableKeyboard(false)
+    self.keyboardEnabled = false
+end)
 
     -- Add title
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
