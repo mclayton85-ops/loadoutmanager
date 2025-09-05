@@ -299,7 +299,7 @@ function LoadoutManagerUI:ShowListContent(mainFrame)
         -- Show "no loadouts" message
         if not mainFrame.contentFrames.list.noLoadoutsText then
             local noLoadoutsText = mainFrame.contentFrames.list:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            noLoadoutsText:SetText("No loadouts available to view.")
+            noLoadoutsText:SetText("No saved loadouts exist.")
             noLoadoutsText:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", 0, 0)
             mainFrame.contentFrames.list.noLoadoutsText = noLoadoutsText
         end
@@ -465,11 +465,12 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
         itemFrame:SetBackdropColor(0, 0, 0, 0.8)
     end
     
-    -- Create or reuse the scroll child
-    local scrollChild = mainFrame.contentFrames.list.scrollChild
+-- Create or reuse the scroll child for the item view panel
+    local scrollChild = itemFrame.scrollChild
     if not scrollChild then
         scrollChild = CreateFrame("Frame", nil, itemFrame)
         itemFrame:SetScrollChild(scrollChild)
+        itemFrame.scrollChild = scrollChild
     end
     
     -- Position item view on the RIGHT side, to the right of the loadout list
