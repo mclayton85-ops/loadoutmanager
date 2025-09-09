@@ -190,7 +190,16 @@ function LoadoutManagerUI:SetActiveButton(mainFrame, button)
     if button.tabType == "create" then
         self:ShowCreateContent(mainFrame)
     elseif button.tabType == "list" then
-        self:ShowListContent(mainFrame)
+    -- Clear cached list content to force refresh
+    if mainFrame.contentFrames.list then
+        mainFrame.contentFrames.list.loadoutListFrame = nil
+        mainFrame.contentFrames.list.loadoutButtons = nil
+        mainFrame.contentFrames.list.selectedLoadout = nil
+        mainFrame.contentFrames.list.itemViewFrame = nil
+        -- FORCE complete frame destruction and recreation
+        mainFrame.contentFrames.list = nil
+    end
+    self:ShowListContent(mainFrame)
     elseif button.tabType == "delete" then
         self:ShowDeleteContent(mainFrame)
     end
@@ -277,23 +286,62 @@ function LoadoutManagerUI:ShowListContent(mainFrame)
         local listFrame = CreateFrame("Frame", nil, contentArea)
         listFrame:SetAllPoints(contentArea)
         
-        -- Title
-        local title = listFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        title:SetText("View Loadouts")
-        title:SetPoint("TOP", listFrame, "TOP", 0, -20)
+       -- Title removed to maximize vertical space
         
         mainFrame.contentFrames.list = listFrame
         mainFrame.contentFrames.list.currentPage = 1
     end
     
-    -- Get available loadouts
+    -- Get available loadouts (rebuild fresh from current database)
     local loadoutNames = {}
     if LoadoutManager and LoadoutManager.db and LoadoutManager.db.loadouts then
-        for name in pairs(LoadoutManager.db.loadouts) do
-            table.insert(loadoutNames, name)
+        for name, loadout in pairs(LoadoutManager.db.loadouts) do
+            -- Verify loadout actually exists before adding to list
+            if loadout then
+                table.insert(loadoutNames, name)
+            end
         end
     end
     table.sort(loadoutNames)
+	
+	-- FORCE COMPLETE REBUILD: Destroy the entire loadout list frame
+if mainFrame.contentFrames.list.loadoutListFrame then
+    -- First, explicitly destroy all buttons
+    if mainFrame.contentFrames.list.loadoutButtons then
+        for _, button in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
+            if button then
+                button:Hide()
+                button:SetParent(nil)
+                button:ClearAllPoints()
+                button:SetScript("OnClick", nil)
+                button.loadoutName = nil
+            end
+        end
+    end
+        -- More aggressive cleanup - destroy the entire parent frame
+mainFrame.contentFrames.list.loadoutListFrame:Hide()
+mainFrame.contentFrames.list.loadoutListFrame:SetParent(nil)
+-- Clear all children explicitly
+local children = {mainFrame.contentFrames.list.loadoutListFrame:GetChildren()}
+for _, child in ipairs(children) do
+    if child then
+        child:Hide()
+        child:SetParent(nil)
+    end
+end
+mainFrame.contentFrames.list.loadoutListFrame = nil
+        mainFrame.contentFrames.list.scrollChild = nil
+        mainFrame.contentFrames.list.loadoutButtons = nil
+        mainFrame.contentFrames.list.selectedLoadout = nil
+    end
+    
+    -- Also destroy item view frame
+    if mainFrame.contentFrames.list.itemViewFrame then
+        mainFrame.contentFrames.list.itemViewFrame:Hide()
+        mainFrame.contentFrames.list.itemViewFrame:SetParent(nil)
+        mainFrame.contentFrames.list.itemViewFrame = nil
+        mainFrame.contentFrames.list.itemButtons = nil
+    end
     
     if #loadoutNames == 0 then
         -- Show "no loadouts" message
@@ -311,12 +359,11 @@ function LoadoutManagerUI:ShowListContent(mainFrame)
         end
         
 -- Create loadout selection list if it doesn't exist
-if not mainFrame.contentFrames.list.loadoutListFrame then
     -- Create scrollable list frame
     local loadoutListFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
-    loadoutListFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list, "TOPLEFT", 10, -50)
-    loadoutListFrame:SetWidth(250)  -- Narrower to leave room for item view
-    loadoutListFrame:SetHeight(240)  -- Doubled from 120 to 240
+    loadoutListFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list, "TOPLEFT", 10, -5)
+    loadoutListFrame:SetWidth(188)  -- 25% smaller than original 250
+    loadoutListFrame:SetHeight(300)  -- Maximized vertical space
     loadoutListFrame:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -330,7 +377,7 @@ if not mainFrame.contentFrames.list.loadoutListFrame then
    -- Create scroll child
     local scrollChild = CreateFrame("Frame", nil, loadoutListFrame)
     loadoutListFrame:SetScrollChild(scrollChild)
-    scrollChild:SetWidth(230)  -- Adjusted for narrower list
+    scrollChild:SetWidth(168)  -- Adjusted for narrower list
         
     -- Store references
     mainFrame.contentFrames.list.loadoutListFrame = loadoutListFrame
@@ -339,19 +386,35 @@ if not mainFrame.contentFrames.list.loadoutListFrame then
     mainFrame.contentFrames.list.selectedLoadout = nil
 end
 
--- Clear existing buttons
+-- FIXED: Properly destroy existing buttons
 if mainFrame.contentFrames.list.loadoutButtons then
-    for _, button in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
-        button:Hide()
+    for i, button in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
+        if button then
+            button:Hide()
+            button:SetParent(nil)
+            button:ClearAllPoints()
+            -- Clear the button's scripts to prevent ghost events
+            button:SetScript("OnClick", nil)
+            button:SetScript("OnEnter", nil)
+            button:SetScript("OnLeave", nil)
+            -- Clear the stored loadout name
+            button.loadoutName = nil
+        end
     end
-    mainFrame.contentFrames.list.loadoutButtons = {}
 end
+-- Create fresh button table
+mainFrame.contentFrames.list.loadoutButtons = {}
+-- Clear selected loadout to prevent stale references
+mainFrame.contentFrames.list.selectedLoadout = nil
 
 -- Create buttons for each loadout
 local yOffset = 0
 for i, loadoutName in ipairs(loadoutNames) do
+    -- DEBUG: Add these lines
+    LoadoutManager:Print("DEBUG: Creating button " .. i .. " for loadout: " .. loadoutName)
+    
     local button = CreateFrame("Button", nil, mainFrame.contentFrames.list.scrollChild)
-    button:SetWidth(230)  -- Adjusted to match narrower container
+    button:SetWidth(168)  -- Adjusted to match narrower container
     button:SetHeight(35)
     button:SetPoint("TOPLEFT", mainFrame.contentFrames.list.scrollChild, "TOPLEFT", 5, -10 - yOffset)
     
@@ -367,30 +430,47 @@ for i, loadoutName in ipairs(loadoutNames) do
     button:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
     button:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
     
-    -- Click handler
-    button:SetScript("OnClick", function(self)
-        -- Deselect all other buttons
-        for _, otherButton in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
-            otherButton.text:SetTextColor(1, 1, 1) -- White
-        end
-        
-        -- Select this button
-        self.text:SetTextColor(1, 1, 0) -- Yellow
-        mainFrame.contentFrames.list.selectedLoadout = loadoutName
-        LoadoutManagerUI:HideItemView(mainFrame)
-    end)
+    -- Click handler - store loadout name on button for reliable reference
+            button.loadoutName = loadoutName
+			LoadoutManager:Print("DEBUG: Set button.loadoutName to: " .. button.loadoutName)
+
+			button:SetScript("OnClick", function(self)
+				-- DEBUG: Add this line
+				LoadoutManager:Print("DEBUG: Button clicked, self.loadoutName = " .. tostring(self.loadoutName))
+                -- Verify loadout still exists before proceeding
+                if not LoadoutManager.db.loadouts[self.loadoutName] then
+                    LoadoutManager:Print("Error: Loadout '" .. self.loadoutName .. "' no longer exists.")
+                    -- Refresh the entire list to remove stale entries
+                    LoadoutManagerUI:ShowListContent(mainFrame)
+                    return
+                end
+                
+                -- Deselect all other buttons
+                for _, otherButton in ipairs(mainFrame.contentFrames.list.loadoutButtons) do
+                    if otherButton and otherButton.text then
+                        otherButton.text:SetTextColor(1, 1, 1) -- White
+                    end
+                end
+                
+                -- Select this button and automatically show items
+                self.text:SetTextColor(1, 1, 0) -- Yellow
+                mainFrame.contentFrames.list.selectedLoadout = self.loadoutName
+                LoadoutManagerUI:ShowItemView(mainFrame, self.loadoutName)
+            end)
     
     table.insert(mainFrame.contentFrames.list.loadoutButtons, button)
     yOffset = yOffset + 40
 end
 
--- Set scroll child height
-mainFrame.contentFrames.list.scrollChild:SetHeight(math.max(yOffset, 100))
+-- Set scroll child height, added nil check
+if mainFrame.contentFrames.list.scrollChild then
+    mainFrame.contentFrames.list.scrollChild:SetHeight(math.max(yOffset, 100))
+end
 
 -- Select first loadout by default
 if #loadoutNames > 0 and mainFrame.contentFrames.list.loadoutButtons[1] then
     mainFrame.contentFrames.list.loadoutButtons[1].text:SetTextColor(1, 1, 0) -- Yellow
-    mainFrame.contentFrames.list.selectedLoadout = loadoutNames[1]
+    mainFrame.contentFrames.list.selectedLoadout = mainFrame.contentFrames.list.loadoutButtons[1].loadoutName
 end
 
 -- Create action buttons if they don't exist
@@ -399,21 +479,14 @@ end
             local loadButton = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
             loadButton:SetWidth(100)
             loadButton:SetHeight(25)
-            loadButton:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", -60, -120)
+            loadButton:SetPoint("BOTTOM", mainFrame.contentFrames.list, "BOTTOM", 0, 10)
             loadButton:SetText("Load Loadout")
             
-            -- View Items Button
-            local viewButton = CreateFrame("Button", nil, mainFrame.contentFrames.list, "UIPanelButtonTemplate")
-            viewButton:SetWidth(120)
-            viewButton:SetHeight(25)
-            viewButton:SetPoint("CENTER", mainFrame.contentFrames.list, "CENTER", 70, -120)
-            viewButton:SetText("View Items")
-            -- Store references
+            -- Store reference (no view button needed)
             mainFrame.contentFrames.list.loadButton = loadButton
-            mainFrame.contentFrames.list.viewButton = viewButton
         end
         
-        -- Action button handlers
+        -- Action button handlers (only load button now)
         mainFrame.contentFrames.list.loadButton:SetScript("OnClick", function()
             local selectedLoadout = mainFrame.contentFrames.list.selectedLoadout
             if selectedLoadout then
@@ -422,18 +495,9 @@ end
                 LoadoutManager:Print("Please select a loadout first.")
             end
         end)
-        
-        mainFrame.contentFrames.list.viewButton:SetScript("OnClick", function()
-            local selectedLoadout = mainFrame.contentFrames.list.selectedLoadout
-            if selectedLoadout then
-                LoadoutManagerUI:ShowItemView(mainFrame, selectedLoadout)
-            else
-                LoadoutManager:Print("Please select a loadout first.")
-            end
-        end)
+		mainFrame.contentFrames.list:Show()
     end
-    mainFrame.contentFrames.list:Show()
-end
+    
 -- Hide the item view display
 function LoadoutManagerUI:HideItemView(mainFrame)
     if mainFrame.contentFrames.list.itemViewFrame then
@@ -447,23 +511,41 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
     local loadout = LoadoutManager.db.loadouts[loadoutName]
     if not loadout then
         LoadoutManager:Print("Error: Loadout not found.")
+        -- Hide the item view if loadout doesn't exist
+        if mainFrame.contentFrames.list.itemViewFrame then
+            mainFrame.contentFrames.list.itemViewFrame:Hide()
+        end
         return
     end
-  
--- Create or reuse the item view frame
-    local itemFrame = mainFrame.contentFrames.list.itemViewFrame
-    if not itemFrame then
-        itemFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
-        itemFrame:SetBackdrop({
-            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true,
-            tileSize = 16,
-            edgeSize = 16,
-            insets = { left = 4, right = 4, top = 4, bottom = 4 }
-        })
-        itemFrame:SetBackdropColor(0, 0, 0, 0.8)
+    
+    -- Clear any existing item view completely
+    if mainFrame.contentFrames.list.itemViewFrame then
+        mainFrame.contentFrames.list.itemViewFrame:Hide()
+        mainFrame.contentFrames.list.itemViewFrame:SetParent(nil)
+        mainFrame.contentFrames.list.itemViewFrame = nil
     end
+    
+    -- Also clear item buttons array
+    mainFrame.contentFrames.list.itemButtons = {}
+  
+-- Always recreate the item view frame to ensure clean state
+    local itemFrame = mainFrame.contentFrames.list.itemViewFrame
+    if itemFrame then
+        itemFrame:Hide()
+        itemFrame:SetParent(nil)
+    end
+    
+    itemFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
+    itemFrame:SetBackdrop({
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    itemFrame:SetBackdropColor(0, 0, 0, 0.8)
+    mainFrame.contentFrames.list.itemViewFrame = itemFrame
     
 -- Create or reuse the scroll child for the item view panel
     local scrollChild = itemFrame.scrollChild
@@ -474,8 +556,8 @@ function LoadoutManagerUI:ShowItemView(mainFrame, loadoutName)
     end
     
     -- Position item view on the RIGHT side, to the right of the loadout list
-    itemFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list.loadoutListFrame, "TOPRIGHT", 10, 0)
-    itemFrame:SetPoint("BOTTOMRIGHT", mainFrame.contentFrames.list, "BOTTOMRIGHT", -10, 40)
+    itemFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list.loadoutListFrame, "TOPRIGHT", 5, 0)
+    itemFrame:SetPoint("BOTTOMRIGHT", mainFrame.contentFrames.list.loadoutListFrame, "BOTTOMRIGHT", 200, 0)
     itemFrame:SetWidth(200) -- Set a fixed width for the right panel
     
     scrollChild:SetWidth(180) -- Narrower to fit in right panel
@@ -607,6 +689,22 @@ end
 function LoadoutManagerUI:UpdateItemView(mainFrame, itemList)
     local itemViewFrame = mainFrame.contentFrames.list.itemViewFrame
     local scrollChild = mainFrame.contentFrames.list.scrollChild
+    
+    -- Clear all existing item buttons completely
+    if mainFrame.contentFrames.list.itemButtons then
+        for i, button in ipairs(mainFrame.contentFrames.list.itemButtons) do
+            if button then
+                button:Hide()
+                button:SetParent(nil)
+                button:ClearAllPoints()
+                button:SetScript("OnEnter", nil)
+                button:SetScript("OnLeave", nil)
+            end
+            mainFrame.contentFrames.list.itemButtons[i] = nil
+        end
+    end
+    mainFrame.contentFrames.list.itemButtons = {}
+    
     local currentPage = mainFrame.contentFrames.list.currentPage or 1
     local itemsPerPage = 50
     
@@ -615,14 +713,14 @@ function LoadoutManagerUI:UpdateItemView(mainFrame, itemList)
     local startIndex = ((currentPage - 1) * itemsPerPage) + 1
     local endIndex = math.min(startIndex + itemsPerPage - 1, #itemList)
     
-    -- Hide all existing item buttons
+    -- Clear all existing item buttons completely
     if mainFrame.contentFrames.list.itemButtons then
         for _, button in ipairs(mainFrame.contentFrames.list.itemButtons) do
             button:Hide()
+            button:SetParent(nil)
         end
-    else
-        mainFrame.contentFrames.list.itemButtons = {}
     end
+    mainFrame.contentFrames.list.itemButtons = {}
     
     -- Create/show item buttons for current page
     local yOffset = 0
@@ -752,11 +850,14 @@ function LoadoutManagerUI:ShowDeleteContent(mainFrame)
         mainFrame.contentFrames.delete = deleteFrame
     end
     
-    -- Get available loadouts
+-- Get available loadouts (rebuild fresh from current database)
     local loadoutNames = {}
     if LoadoutManager and LoadoutManager.db and LoadoutManager.db.loadouts then
-        for name in pairs(LoadoutManager.db.loadouts) do
-            table.insert(loadoutNames, name)
+        for name, loadout in pairs(LoadoutManager.db.loadouts) do
+            -- Verify loadout actually exists before adding to list
+            if loadout then
+                table.insert(loadoutNames, name)
+            end
         end
     end
     table.sort(loadoutNames)
@@ -772,9 +873,22 @@ function LoadoutManagerUI:ShowDeleteContent(mainFrame)
         mainFrame.contentFrames.delete.noLoadoutsText:Show()
     else
         -- Hide "no loadouts" message if it exists
-        if mainFrame.contentFrames.delete.noLoadoutsText then
-            mainFrame.contentFrames.delete.noLoadoutsText:Hide()
+        if mainFrame.contentFrames.list.noLoadoutsText then
+            mainFrame.contentFrames.list.noLoadoutsText:Hide()
         end
+
+        -- CREATE SCROLL FRAME AND SCROLL CHILD
+        local scrollFrame = CreateFrame("ScrollFrame", nil, mainFrame.contentFrames.list)
+        scrollFrame:SetPoint("TOPLEFT", mainFrame.contentFrames.list, "TOPLEFT", 0, -10)
+        scrollFrame:SetPoint("BOTTOMRIGHT", mainFrame.contentFrames.list, "BOTTOMRIGHT", -25, 40)
+        
+        local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+        scrollChild:SetWidth(scrollFrame:GetWidth())
+        scrollFrame:SetScrollChild(scrollChild)
+        
+        mainFrame.contentFrames.list.scrollFrame = scrollFrame
+        mainFrame.contentFrames.list.scrollChild = scrollChild
+        mainFrame.contentFrames.list.loadoutButtons = {}
         
         -- Create dropdown selection if it doesn't exist
         if not mainFrame.contentFrames.delete.dropdownText then
